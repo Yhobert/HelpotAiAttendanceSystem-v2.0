@@ -261,7 +261,7 @@ function speakEmployeeAction(qrText, action = "logged in") {
         const greetingsIn = [
             `Hello ${nickname} focus on your target!, not on your workmate!`,
             `Good day ${nickname} naligo kaba bago pumasok?!`,
-            `Nice to see you, ${nickname}you look so frest today!`,
+            `Nice to see you, ${nickname}you look so fresh today!`,
             `Hi young stunna${nickname}!`
         ];
         const greetingsOut = [
