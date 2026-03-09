@@ -259,10 +259,10 @@ function speakEmployeeAction(qrText, action = "logged in") {
     const doSpeak = () => {
         const nickname = extractNicknameFromQR(qrText);
         const greetingsIn = [
-            `Hello ${nickname}!`,
-            `Good day ${nickname}!`,
+            `Hello ${nickname} focus on your target!, not on your workmate!`,
+            `Good day ${nickname} naligo kaba bago pumasok?!`,
             `Nice to see you, ${nickname}!`,
-            `Hi ${nickname}, great to have you back!`
+            `Hi young stunna${nickname}!`
         ];
         const greetingsOut = [
             `Goodbye ${nickname}!`,
@@ -276,19 +276,19 @@ function speakEmployeeAction(qrText, action = "logged in") {
 
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(messageText);
-        msg.lang = "en-US";
-        msg.pitch = 1.25;
-        msg.rate = 0.95;
+        msg.lang = "en-PH";
+        msg.pitch = 3;
+        msg.rate = 1.50;
         msg.volume = 1;
 
         const voices = window.speechSynthesis.getVoices();
-        const femaleUS = voices.find(v =>
-            (v.lang === "en-US" || v.lang.startsWith("en-US")) &&
-            (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("samantha") || v.name.toLowerCase().includes("zira") || v.name.toLowerCase().includes("woman") || v.name.toLowerCase().includes("google"))
-        );
-        const anyFemale = voices.find(v => v.lang.startsWith("en") && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("samantha") || v.name.toLowerCase().includes("zira") || v.name.toLowerCase().includes("woman")));
+        const isFemale = v => v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("samantha") || v.name.toLowerCase().includes("zira") || v.name.toLowerCase().includes("woman") || v.name.toLowerCase().includes("philippines") || v.name.toLowerCase().includes("filipina");
+        const femalePH = voices.find(v => (v.lang === "en-PH" || v.lang.startsWith("en-PH")) && isFemale(v));
+        const anyPH = voices.find(v => v.lang === "en-PH" || v.lang.startsWith("en-PH"));
+        const femaleUS = voices.find(v => (v.lang === "en-US" || v.lang.startsWith("en-US")) && isFemale(v));
+        const anyFemale = voices.find(v => v.lang.startsWith("en") && isFemale(v));
         const enUS = voices.find(v => v.lang === "en-US" || v.lang.startsWith("en-US"));
-        msg.voice = femaleUS || anyFemale || enUS || (voices.length ? voices[0] : null);
+        msg.voice = femalePH || anyPH || femaleUS || anyFemale || enUS || (voices.length ? voices[0] : null);
 
         window.speechSynthesis.speak(msg);
     };
@@ -335,19 +335,17 @@ function saveLogItem(d) {
             saved: '',
             eid,
             name,
-            nickname,
-            snapshot: d.snapshot || ''
+            nickname
         };
         log.unshift(row);
     }
 
-    // refresh common fields
+    // refresh common fields (do NOT store snapshot in memory/localStorage - saves to disk only)
     row.text = text;
     row.type = d.type || row.type || 'camera';
     row.eid = eid;
     row.name = name;
     row.nickname = nickname;
-    row.snapshot = d.snapshot || row.snapshot;
     row.timestamp = Date.now();
 
     if (mode === 'in') {
@@ -379,15 +377,13 @@ function saveLogItem(d) {
     log.sort((a, b) => b.timestamp - a.timestamp);
     localStorage.setItem(LOG_KEY, JSON.stringify(log.slice(0, 200)));
 
-    // Auto-save snapshot to local disk (chosen folder if supported, else server folder: snapshots/)
+    // Save snapshot to disk only (never store base64 in localStorage to avoid lag)
     if (d.snapshot) {
-        // Use employee NAME for filename ("Date, Time, Employee Name")
         const label = (name || '').trim() || 'employee';
         const refId = `${employeeKey}__${dateKey}`;
         saveSnapshotToDisk(d.snapshot, label)
             .then(savedPath => {
                 if (!savedPath) return;
-                // Update the latest matching entry with the saved file info
                 const updated = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
                 const item = updated.find(x => `${(x.employeeKey||'')}__${(x.dateKey||x.date)}` === refId);
                 if (item) {
@@ -397,6 +393,8 @@ function saveLogItem(d) {
                 updateLatestSnapshotView();
             })
             .catch(() => {});
+        // Drop snapshot reference immediately to free memory
+        d.snapshot = null;
     }
 
     renderLog();
@@ -489,31 +487,22 @@ function updateLatestSnapshotView(){
     if (!latestSnapshotImg || !latestMeta || !latestQr) return;
     const log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]');
     log.sort((a,b)=> (b.timestamp||0) - (a.timestamp||0));
-    const latest = log.find(x => x && (x.snapshot || x.saved));
+    const latest = log[0];
 
-    // Animate content
-    [latestMeta, latestQr, latestSnapshotImg].forEach(el=>{
+    [latestMeta, latestQr].forEach(el=>{
         if(!el) return;
         el.classList.remove('animate-in');
         void el.offsetWidth;
         el.classList.add('animate-in');
     });
 
+    latestSnapshotImg.style.display = 'none';
+    if (latestSnapshotEmpty) latestSnapshotEmpty.style.display = 'flex';
+
     if (!latest) {
-        latestSnapshotImg.style.display = 'none';
-        if (latestSnapshotEmpty) latestSnapshotEmpty.style.display = 'flex';
-        latestMeta.innerHTML = `<div><span class="k">Status:</span> <span class="v">No snapshot yet</span></div>`;
+        latestMeta.innerHTML = `<div><span class="k">Status:</span> <span class="v">No scan yet</span></div>`;
         latestQr.textContent = '';
         return;
-    }
-
-    if (latest.snapshot) {
-        latestSnapshotImg.src = latest.snapshot;
-        latestSnapshotImg.style.display = 'block';
-        if (latestSnapshotEmpty) latestSnapshotEmpty.style.display = 'none';
-    } else {
-        latestSnapshotImg.style.display = 'none';
-        if (latestSnapshotEmpty) latestSnapshotEmpty.style.display = 'flex';
     }
 
     latestMeta.innerHTML = [
