@@ -278,7 +278,7 @@ function speakEmployeeAction(qrText, action = "logged in") {
         const msg = new SpeechSynthesisUtterance(messageText);
         msg.lang = "en-PH";
         msg.pitch = 3;
-        msg.rate = 0.80;
+        msg.rate = 1.50;
         msg.volume = 1;
 
         const voices = window.speechSynthesis.getVoices();
