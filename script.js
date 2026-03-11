@@ -260,7 +260,7 @@ function speakEmployeeAction(qrText, action = "logged in") {
         const nickname = extractNicknameFromQR(qrText);
         const greetingsIn = [
             `Hello ${nickname} focus on your target!, not on your workmate!`,
-            `Good day ${nickname} nag kaon kana love?!`,
+            `Good day ${nickname} nag ka on kana love?!`,
             `Nice to see you, ${nickname}you look so fresh today!`,
             `Hi young stunna${nickname}!`
         ];
@@ -278,7 +278,7 @@ function speakEmployeeAction(qrText, action = "logged in") {
         const msg = new SpeechSynthesisUtterance(messageText);
         msg.lang = "en-PH";
         msg.pitch = 3;
-        msg.rate = 1.50;
+        msg.rate = 1.10;
         msg.volume = 1;
 
         const voices = window.speechSynthesis.getVoices();
