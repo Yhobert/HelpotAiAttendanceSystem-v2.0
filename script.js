@@ -260,7 +260,7 @@ function speakEmployeeAction(qrText, action = "logged in") {
         const nickname = extractNicknameFromQR(qrText);
         const greetingsIn = [
             `Hello ${nickname} focus on your target!, not on your workmate!`,
-            `Good day ${nickname} nag ka on kana love?!`,
+            `Good day ${nickname} nag ka in kana love?!`,
             `Nice to see you, ${nickname}you look so fresh today!`,
             `Hi young stunna${nickname}!`
         ];
