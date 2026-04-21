@@ -1,0 +1,195 @@
+// Web App: Deploy with Execute as "Me", Who has access "Anyone"
+// Running File rules:
+// - Each LOGIN tap → new row (LogIn only). Two logins same day → two rows.
+// - Each LOGOUT tap: if an “open” row exists (LogIn yes, LogOut empty), fill LogOut on that row (same row as last open login = LIFO). Else new row (LogOut only).
+// - Paired POST (LogIn+LogOut together, Auto mode from server): close that open row so login + logout stay on one row.
+// - Rows for the same agent+date that already have both LogIn and LogOut are skipped (never used for pairing).
+
+var SPREADSHEET_ID = '1cR3sASwxxccTvmakC-gn2rXMGKT43XAAG7VJQzZPbAA';
+var SHEET_NAME_PREFERRED = 'Running File';
+
+function getTargetSheet_(ss) {
+  var sheet = ss.getSheetByName(SHEET_NAME_PREFERRED);
+  if (sheet) return sheet;
+  sheet = ss.getSheetByName('Sheet1');
+  if (sheet) return sheet;
+  return ss.getSheets()[0];
+}
+
+// Columns A–E: EID | Name | Date | LogIn | LogOut
+
+function doGet() {
+  return jsonOut({
+    success: true,
+    message: 'HelportAI Apps Script is reachable',
+    spreadsheetId: SPREADSHEET_ID,
+    sheet: SHEET_NAME_PREFERRED
+  });
+}
+
+function cellAsText_(cell) {
+  if (cell === null || cell === undefined) return '';
+  if (Object.prototype.toString.call(cell) === '[object Date]' && !isNaN(cell.getTime())) {
+    return Utilities.formatDate(cell, Session.getScriptTimeZone(), 'HH:mm:ss');
+  }
+  return String(cell).trim();
+}
+
+/** One comparable date key: MM-dd-yyyy (matches PHP helport_date_ymd_to_sheet / client toSheetDateMMDDYYYY). */
+function canonicalDateKey_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'MM-dd-yyyy');
+  }
+  var s = String(v).trim();
+  if (!s) return '';
+  // yyyy-mm-dd
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return m[2] + '-' + m[3] + '-' + m[1];
+  // mm-dd-yyyy or m-d-yyyy (with dashes)
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (m) {
+    var mo = ('0' + m[1]).slice(-2);
+    var da = ('0' + m[2]).slice(-2);
+    return mo + '-' + da + '-' + m[3];
+  }
+  // m/d/yyyy
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) {
+    var mo2 = ('0' + m[1]).slice(-2);
+    var da2 = ('0' + m[2]).slice(-2);
+    return mo2 + '-' + da2 + '-' + m[3];
+  }
+  return s;
+}
+
+function normEid(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') {
+    if (isNaN(v)) return '';
+    return String(Math.round(v));
+  }
+  return String(v).trim();
+}
+
+function normDate(v) {
+  return canonicalDateKey_(v);
+}
+
+function isLikelyHeaderRow_(row) {
+  var a = String(row[0] != null ? row[0] : '').trim().toLowerCase();
+  return a === 'eid' || a === 'employee id' || a === 'employee_id' || a === 'id';
+}
+
+/** Both times already set — ignore this row when pairing taps for the same agent/day. */
+function isSessionCompleteRow_(row) {
+  var exIn = cellAsText_(row[3]);
+  var exOut = cellAsText_(row[4]);
+  return exIn !== '' && exOut !== '';
+}
+
+function rowsMatchingEidDate_(values, eid, date) {
+  var hits = [];
+  var wantEid = normEid(eid);
+  var wantDate = canonicalDateKey_(date);
+  var i;
+  for (i = 0; i < values.length; i++) {
+    var row = values[i];
+    if (i === 0 && isLikelyHeaderRow_(row)) continue;
+    var rEid = normEid(row[0]);
+    var rDate = canonicalDateKey_(row[2]);
+    if (rEid !== wantEid || rDate !== wantDate) continue;
+    if (isSessionCompleteRow_(row)) continue;
+    hits.push({ rowNum: i + 1, data: row });
+  }
+  return hits;
+}
+
+function isOpenSession_(hit) {
+  var exIn = cellAsText_(hit.data[3]);
+  var exOut = cellAsText_(hit.data[4]);
+  return exIn !== '' && exOut === '';
+}
+
+/** Bottom-most open row for this EID+date (last login without logout yet). */
+function findLastOpenSession_(hits) {
+  var last = null;
+  var k;
+  for (k = 0; k < hits.length; k++) {
+    if (isOpenSession_(hits[k])) last = hits[k];
+  }
+  return last;
+}
+
+function doPost(e) {
+  var out = { success: false, error: 'Unknown error' };
+  try {
+    var raw = '{}';
+    if (e && e.postData && e.postData.contents) {
+      raw = e.postData.contents;
+    }
+    var data = JSON.parse(raw);
+
+    var eid = normEid(data.eid);
+    var name = String(data.name || '').trim();
+    var date = normDate(data.date);
+    var logIn = String(data.logIn || '').trim();
+    var logOut = String(data.logOut || '').trim();
+
+    if (!eid || !date) {
+      out = { success: false, error: 'Missing required fields (eid, date)' };
+    } else if (!logIn && !logOut) {
+      out = { success: false, error: 'Need at least one of logIn or logOut' };
+    } else {
+      var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+      var sheet = getTargetSheet_(ss);
+      if (!sheet) {
+        out = { success: false, error: 'No sheet found in spreadsheet' };
+      } else {
+        var values = sheet.getDataRange().getValues();
+        var hits = rowsMatchingEidDate_(values, eid, date);
+        var open = findLastOpenSession_(hits);
+        var exName;
+        var dispName;
+        var exIn;
+
+        if (logIn && logOut) {
+          // Paired (Auto logout from server / client): same sheet row as the open login.
+          if (open) {
+            exName = String(open.data[1] != null ? open.data[1] : '').trim();
+            dispName = name || exName;
+            exIn = cellAsText_(open.data[3]);
+            sheet.getRange(open.rowNum, 1, 1, 5).setValues([[eid, dispName, date, exIn || logIn, logOut]]);
+            out = { success: true, action: 'closed_session', row: open.rowNum };
+          } else {
+            sheet.appendRow([eid, name || '', date, logIn, logOut]);
+            out = { success: true, action: 'appended_pair', row: sheet.getLastRow() };
+          }
+        } else if (logIn && !logOut) {
+          // Always a new row — never overwrite a previous login on the same row
+          sheet.appendRow([eid, name || '', date, logIn, '']);
+          out = { success: true, action: 'appended_login', row: sheet.getLastRow() };
+        } else {
+          // Logout only: pair with last open row, or new row if double-logout / orphan
+          if (open) {
+            exName = String(open.data[1] != null ? open.data[1] : '').trim();
+            exIn = cellAsText_(open.data[3]);
+            dispName = name || exName;
+            sheet.getRange(open.rowNum, 1, 1, 5).setValues([[eid, dispName, date, exIn, logOut]]);
+            out = { success: true, action: 'closed_session', row: open.rowNum };
+          } else {
+            sheet.appendRow([eid, name || '', date, '', logOut]);
+            out = { success: true, action: 'appended_logout_only', row: sheet.getLastRow() };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    out = { success: false, error: String(err && err.message ? err.message : err) };
+  }
+  return jsonOut(out);
+}
+
+function jsonOut(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
